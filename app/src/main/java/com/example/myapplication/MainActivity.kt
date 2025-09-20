@@ -17,6 +17,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -26,6 +29,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.example.myapplication.ui.theme.MyApplicationTheme
+import androidx.compose.runtime.getValue
+
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -44,6 +49,8 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun ProfileCard() {
+    var isFollowed by remember { mutableStateOf(false) } // <-- исправлено
+
     Box(
         modifier = Modifier
             .padding(8.dp)
@@ -63,7 +70,7 @@ fun ProfileCard() {
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f),
             ) {
                 Image(
-                    painter = painterResource(id = R.drawable.profile),
+                    painter = painterResource(id = if (isFollowed) R.drawable.profile2 else R.drawable.profile),
                     contentDescription = null,
                     modifier = Modifier.clip(CircleShape)
                 )
@@ -72,7 +79,7 @@ fun ProfileCard() {
             Column(
                 modifier = Modifier
                     .padding(start = 12.dp)
-                    .weight(1f) // занимает всё свободное место
+                    .weight(1f)
             ) {
                 Text(
                     text = "Aron Nurgaliyev",
@@ -87,16 +94,16 @@ fun ProfileCard() {
                 )
             }
 
-            // Кнопка
             androidx.compose.material3.Button(
-                onClick = { /* TODO: обработка */ },
+                onClick = { isFollowed = !isFollowed },
                 shape = RoundedCornerShape(20.dp)
             ) {
-                Text(text = "Follow")
+                Text(text = if (isFollowed) "Followed" else "Follow")
             }
         }
     }
 }
+
 
 
 
