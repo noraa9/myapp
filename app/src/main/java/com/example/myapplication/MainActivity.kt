@@ -5,27 +5,19 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.animation.animateColor
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.animateIntAsState
-import androidx.compose.animation.core.tween
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.setValue
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -35,30 +27,104 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.example.myapplication.ui.theme.MyApplicationTheme
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.saveable.rememberSaveable
-
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
             MyApplicationTheme {
-                Surface(
-                    color = Color.White
-                ) {
-                    ProfileCard()
+                MainApp()
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun MainApp() {
+    var currentScreen by rememberSaveable { mutableStateOf("profile") }
+    val snackbarHostState = remember { SnackbarHostState() }
+
+    var isFollowed by rememberSaveable { mutableStateOf(false) }
+    var followers by rememberSaveable { mutableIntStateOf(0) }
+    var showUnfollowDialog by rememberSaveable { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+
+    if (showUnfollowDialog) {
+        AlertDialog(
+            onDismissRequest = { showUnfollowDialog = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    isFollowed = false
+                    if (followers > 0) followers -= 1
+                    showUnfollowDialog = false
+                }) {
+                    Text("Unfollow")
                 }
+            },
+            dismissButton = {
+                TextButton(onClick = { showUnfollowDialog = false }) {
+                    Text("Cancel")
+                }
+            },
+            title = { Text("Unfollow?") },
+            text = { Text("Are you sure you want to unfollow?") }
+        )
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(if (currentScreen == "profile") "Profile Screen" else "Course Progress") },
+                navigationIcon = {
+                    if (currentScreen == "progress") {
+                        IconButton(onClick = { currentScreen = "profile" }) {
+                            Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                        }
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    titleContentColor = Color.White,
+                    navigationIconContentColor = Color.White
+                )
+            )
+        },
+        snackbarHost = { SnackbarHost(snackbarHostState) }
+    ) { innerPadding ->
+        Box(modifier = Modifier.padding(innerPadding)) {
+            if (currentScreen == "profile") {
+                ProfileCard(
+                    isFollowed = isFollowed,
+                    followers = followers,
+                    onFollowClick = {
+                        if (isFollowed) {
+                            showUnfollowDialog = true
+                        } else {
+                            isFollowed = true
+                            followers += 1
+                            scope.launch {
+                                snackbarHostState.showSnackbar("You are now following!")
+                            }
+                        }
+                    },
+                    onNavigateToProgress = { currentScreen = "progress" }
+                )
+            } else {
+                ProgressScreen()
             }
         }
     }
 }
 
 @Composable
-fun ProfileCard() {
-    var isFollowed by rememberSaveable { mutableStateOf(false) }
-    var followers by rememberSaveable { mutableIntStateOf(0) }
+fun ProfileCard(
+    isFollowed: Boolean,
+    followers: Int,
+    onFollowClick: () -> Unit,
+    onNavigateToProgress: () -> Unit = {}
+) {
 
     var rainbowActive by rememberSaveable { mutableStateOf(false) }
 
@@ -102,7 +168,6 @@ fun ProfileCard() {
         animationSpec = tween(200)
     )
 
-//    Кароче, контур
     val border = if (rainbowActive) {
         BorderStroke(3.dp, rainbowColor)
     } else null
@@ -114,17 +179,21 @@ fun ProfileCard() {
         }
     }
 
-    Box(
+    Card(
         modifier = Modifier
             .padding(8.dp)
-            .clip(RoundedCornerShape(12.dp))
-            .background(Color.DarkGray)
             .fillMaxWidth()
-            .padding(16.dp)
+            .clickable { onNavigateToProgress() }, // ДОБАВИЛ: клик для навигации
+        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.DarkGray)
     ) {
+
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.fillMaxWidth()
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp)
         ) {
             Surface(
                 modifier = Modifier.size(60.dp),
@@ -137,7 +206,6 @@ fun ProfileCard() {
                     modifier = Modifier.clip(CircleShape)
                 )
             }
-
             Column(
                 modifier = Modifier
                     .padding(start = 12.dp)
@@ -161,20 +229,11 @@ fun ProfileCard() {
                 )
             }
 
-            androidx.compose.material3.Button(
-                onClick = {
-                    if (isFollowed) {
-                        isFollowed = false
-                        if (followers > 0) followers -= 1
-                    } else {
-                        isFollowed = true
-                        followers += 1
-                        rainbowActive = true
-                    }
-                },
+            Button(
+                onClick = onFollowClick,
                 shape = RoundedCornerShape(20.dp),
                 border = border,
-                colors = androidx.compose.material3.ButtonDefaults.buttonColors(
+                colors = ButtonDefaults.buttonColors(
                     containerColor = buttonColor
                 )
             ) {
@@ -187,13 +246,91 @@ fun ProfileCard() {
     }
 }
 
+@Composable
+fun ProgressScreen() {
+    var courseUnderstanding by rememberSaveable { mutableStateOf(0.7f) }
+    var selfStudy by rememberSaveable { mutableStateOf(0.5f) }
+    var youtube by rememberSaveable { mutableStateOf(0.3f) }
 
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp)
+    ) {
+        Text(
+            text = "Course Learning Progress",
+            style = MaterialTheme.typography.headlineSmall,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(bottom = 24.dp)
+        )
 
+        // Course Understanding
+        Text("Course Understanding: ${(courseUnderstanding * 100).toInt()}%")
+        Slider(
+            value = courseUnderstanding,
+            onValueChange = { courseUnderstanding = it },
+            valueRange = 0f..1f
+        )
+        LinearProgressIndicator(
+            progress = courseUnderstanding,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(8.dp)
+                .padding(vertical = 8.dp),
+            color = Color(0xFF4CAF50)
+        )
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // Self Study
+        Text("Self Study: ${(selfStudy * 100).toInt()}%")
+        Slider(
+            value = selfStudy,
+            onValueChange = { selfStudy = it },
+            valueRange = 0f..1f
+        )
+        LinearProgressIndicator(
+            progress = selfStudy,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(8.dp)
+                .padding(vertical = 8.dp),
+            color = Color(0xFF2196F3)
+        )
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // YouTube
+        Text("YouTube Tutorials: ${(youtube * 100).toInt()}%")
+        Slider(
+            value = youtube,
+            onValueChange = { youtube = it },
+            valueRange = 0f..1f
+        )
+        LinearProgressIndicator(
+            progress = youtube,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(8.dp)
+                .padding(vertical = 8.dp),
+            color = Color(0xFFFF5722)
+        )
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        CircularProgressIndicator(
+            progress = (courseUnderstanding + selfStudy + youtube) / 3,
+            modifier = Modifier
+                .size(100.dp)
+                .align(Alignment.CenterHorizontally)
+        )
+    }
+}
 
 @Preview(showBackground = true)
 @Composable
 fun DefaultPreview() {
     MyApplicationTheme {
-        ProfileCard()
+        MainApp()
     }
 }
