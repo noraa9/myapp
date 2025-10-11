@@ -11,6 +11,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -28,6 +29,17 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.example.myapplication.ui.theme.MyApplicationTheme
 import kotlinx.coroutines.launch
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+
+
+data class Follower(
+    val id: Int,
+    val name: String,
+    val handle: String,
+    val image: Int
+)
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -136,6 +148,18 @@ fun ProfileCard(
         Color(201,229,255),
     )
 
+    var follewerList by rememberSaveable {
+        mutableStateOf(listOf(
+            Follower(1, "Біреубева Біреу", "@bireubayev1" ,R.drawable.profile),
+            Follower(2, "Кеткенбаев Кеткен", "@ketken" ,R.drawable.profile2),
+            Follower(3, "Барғанбаев Барған", "@barganbayev1987" ,R.drawable.profile),
+            Follower(4, "Анаубаев Анау", "@anaubaev2" ,R.drawable.profile2),
+            Follower(5, "Мынаубаев Мынау", "@mynau" ,R.drawable.profile),
+        ))
+    }
+
+
+
     val infiniteTransition = rememberInfiniteTransition(label = "rainbow")
     val rainbowColor by infiniteTransition.animateColor(
         initialValue = rainbowColors.first(),
@@ -179,71 +203,117 @@ fun ProfileCard(
         }
     }
 
-    Card(
+    Column(
         modifier = Modifier
-            .padding(8.dp)
-            .fillMaxWidth()
-            .clickable { onNavigateToProgress() }, // ДОБАВИЛ: клик для навигации
-        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.DarkGray)
+            .fillMaxSize()
+            .background(Color.White)
     ) {
-
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
+        Card(
             modifier = Modifier
+                .padding(8.dp)
                 .fillMaxWidth()
-                .padding(16.dp)
+                .clickable { onNavigateToProgress() }, // ДОБАВИЛ: клик для навигации
+            elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
+            shape = RoundedCornerShape(12.dp),
+            colors = CardDefaults.cardColors(containerColor = Color.DarkGray)
         ) {
-            Surface(
-                modifier = Modifier.size(60.dp),
-                shape = CircleShape,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f),
-            ) {
-                Image(
-                    painter = painterResource(id = if (isFollowed) R.drawable.profile2 else R.drawable.profile),
-                    contentDescription = null,
-                    modifier = Modifier.clip(CircleShape)
-                )
-            }
-            Column(
-                modifier = Modifier
-                    .padding(start = 12.dp)
-                    .weight(1f)
-            ) {
-                Text(
-                    text = "Aron Nurgaliyev",
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White,
-                    style = MaterialTheme.typography.bodyLarge
-                )
-                Text(
-                    text = "IT student",
-                    color = Color.White.copy(alpha = 0.7f),
-                    style = MaterialTheme.typography.bodyMedium
-                )
-                Text(
-                    text = "$animatedFollowers followers",
-                    color = Color.White.copy(alpha = .7f),
-                    style = MaterialTheme.typography.bodySmall
-                )
-            }
 
-            Button(
-                onClick = onFollowClick,
-                shape = RoundedCornerShape(20.dp),
-                border = border,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = buttonColor
-                )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp)
             ) {
-                Text(
-                    text = if (isFollowed) "Followed" else "Follow",
-                    color = textColor
-                )
+                Surface(
+                    modifier = Modifier.size(60.dp),
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f),
+                ) {
+                    Image(
+                        painter = painterResource(id = if (isFollowed) R.drawable.profile2 else R.drawable.profile),
+                        contentDescription = null,
+                        modifier = Modifier.clip(CircleShape)
+                    )
+                }
+                Column(
+                    modifier = Modifier
+                        .padding(start = 12.dp)
+                        .weight(1f)
+                ) {
+                    Text(
+                        text = "Aron Nurgaliyev",
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                        style = MaterialTheme.typography.bodyLarge
+                    )
+                    Text(
+                        text = "IT student",
+                        color = Color.White.copy(alpha = 0.7f),
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Text(
+                        text = "$animatedFollowers followers",
+                        color = Color.White.copy(alpha = .7f),
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+
+                Button(
+                    onClick = onFollowClick,
+                    shape = RoundedCornerShape(20.dp),
+                    border = border,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = buttonColor
+                    )
+                ) {
+                    Text(
+                        text = if (isFollowed) "Followed" else "Follow",
+                        color = textColor
+                    )
+                }
+            }
+        }
+        Text(
+            text = "Followewrs (${follewerList.size})",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(16.dp, 16.dp, 0.dp, 8.dp)
+        )
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            items(follewerList) { follower ->
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(70.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    elevation = CardDefaults.cardElevation(4.dp)
+                ) {
+
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Surface(
+                            modifier = Modifier.size(50.dp),
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = .2f),
+                        ) {
+                            Image(
+                                painter = painterResource(id = follower.image),
+                                contentDescription = null,
+                                modifier = Modifier.clip(CircleShape)
+                            )
+                        }
+                    }
+                }
             }
         }
     }
+
 }
 
 @Composable
