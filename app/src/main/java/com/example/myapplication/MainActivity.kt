@@ -11,11 +11,11 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -32,13 +32,16 @@ import kotlinx.coroutines.launch
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.ui.layout.ContentScale
+import kotlin.math.round
 
 
 data class Follower(
     val id: Int,
     val name: String,
     val handle: String,
-    val image: Int
+    val image: Int,
+    val isMe: Boolean = false
 )
 
 class MainActivity : ComponentActivity() {
@@ -59,7 +62,7 @@ fun MainApp() {
     val snackbarHostState = remember { SnackbarHostState() }
 
     var isFollowed by rememberSaveable { mutableStateOf(false) }
-    var followers by rememberSaveable { mutableIntStateOf(0) }
+    var followers by rememberSaveable { mutableIntStateOf(5) }
     var showUnfollowDialog by rememberSaveable { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
@@ -121,7 +124,8 @@ fun MainApp() {
                             }
                         }
                     },
-                    onNavigateToProgress = { currentScreen = "progress" }
+                    onNavigateToProgress = { currentScreen = "progress" },
+                    snackbarHostState = snackbarHostState
                 )
             } else {
                 ProgressScreen()
@@ -130,12 +134,14 @@ fun MainApp() {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProfileCard(
     isFollowed: Boolean,
     followers: Int,
     onFollowClick: () -> Unit,
-    onNavigateToProgress: () -> Unit = {}
+    onNavigateToProgress: () -> Unit = {},
+    snackbarHostState: SnackbarHostState = remember { SnackbarHostState() }
 ) {
 
     var rainbowActive by rememberSaveable { mutableStateOf(false) }
@@ -158,7 +164,7 @@ fun ProfileCard(
         ))
     }
 
-
+    val scope = rememberCoroutineScope()
 
     val infiniteTransition = rememberInfiniteTransition(label = "rainbow")
     val rainbowColor by infiniteTransition.animateColor(
@@ -203,6 +209,19 @@ fun ProfileCard(
         }
     }
 
+    LaunchedEffect(isFollowed) {
+        if (isFollowed) {
+            if (follewerList.none { it.isMe }) {
+                follewerList = listOf(
+                    Follower(999, "You", "@yourhandle", R.drawable.profile, isMe = true)
+                ) + follewerList
+            }
+        } else {
+            // ДОБАВИЛ: удаляем себя из списка когда отписываемся
+            follewerList = follewerList.filter { !it.isMe }
+        }
+    }
+
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -212,7 +231,7 @@ fun ProfileCard(
             modifier = Modifier
                 .padding(8.dp)
                 .fillMaxWidth()
-                .clickable { onNavigateToProgress() }, // ДОБАВИЛ: клик для навигации
+                .clickable { onNavigateToProgress() },
             elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
             shape = RoundedCornerShape(12.dp),
             colors = CardDefaults.cardColors(containerColor = Color.DarkGray)
@@ -273,43 +292,191 @@ fun ProfileCard(
                 }
             }
         }
+
+        // STORIES SECTION
         Text(
-            text = "Followewrs (${follewerList.size})",
+            text = "Stories",
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold,
             modifier = Modifier.padding(16.dp, 16.dp, 0.dp, 8.dp)
         )
+
+        LazyRow(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            items(5) { index ->
+                Card(
+                    modifier = Modifier
+                        .width(80.dp)
+                        .height(120.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = listOf(
+                            Color(0xFFFF6B6B),
+                            Color(0xFF4ECDC4),
+                            Color(0xFFFFE66D),
+                            Color(0xFF95E1D3),
+                            Color(0xFFA8E6CF)
+                        )[index]
+                    )
+                ) {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "Story ${index + 1}",
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // FOLLOWERS SECTION
+        Text(
+            text = "Followers (${follewerList.size})",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(16.dp, 16.dp, 0.dp, 8.dp)
+        )
+
+        val displayList = if (isFollowed) follewerList else follewerList.filter { !it.isMe }
+
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 8.dp),
+                .padding(horizontal = 8.dp)
+                .clip(RoundedCornerShape(12.dp)),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            items(follewerList) { follower ->
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(70.dp),
-                    shape = RoundedCornerShape(12.dp),
-                    elevation = CardDefaults.cardElevation(4.dp)
-                ) {
+            items(displayList, key = { it.id }) { follower ->
+                var isFollowingThisUser by rememberSaveable(follower.id) { mutableStateOf(false) }
+                val currentItem by rememberUpdatedState(follower)
+                val dismissState = rememberSwipeToDismissBoxState(
+                    confirmValueChange = { value ->
+                        if (value == SwipeToDismissBoxValue.EndToStart && !follower.isMe) {
+                            val removedName = follower.name
+                            val removedFollower = currentItem
+                            follewerList = follewerList.filter { it.id != follower.id }
 
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Surface(
-                            modifier = Modifier.size(50.dp),
-                            shape = CircleShape,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = .2f),
+                            scope.launch {
+                                val result = snackbarHostState.showSnackbar(
+                                    message = "$removedName removed from feed",
+                                    actionLabel = "Undo",
+                                    duration = SnackbarDuration.Short
+                                )
+                                if (result == SnackbarResult.ActionPerformed) {
+                                    follewerList = (follewerList + removedFollower).sortedBy { it.id }
+                                }
+                            }
+                            return@rememberSwipeToDismissBoxState true
+                        }
+                        return@rememberSwipeToDismissBoxState false
+                    },
+                    positionalThreshold = { it * 0.25f }
+                )
+
+                SwipeToDismissBox(
+                    state = dismissState,
+                    modifier = Modifier.padding(vertical = 4.dp),
+                    enableDismissFromEndToStart = !follower.isMe,
+                    backgroundContent = {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(Color.Gray.copy(alpha = 0.7f))
+                                .padding(horizontal = 16.dp)
+                                .clip(RoundedCornerShape(12.dp)),
+                            contentAlignment = Alignment.CenterEnd,
+
                         ) {
-                            Image(
-                                painter = painterResource(id = follower.image),
-                                contentDescription = null,
-                                modifier = Modifier.clip(CircleShape)
+                            Icon(
+                                imageVector = Icons.Default.Delete,
+                                contentDescription = "Delete",
+                                tint = Color.White,
+                                modifier = Modifier.size(24.dp)
                             )
                         }
+                    },
+                    content = {
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(70.dp),
+                            shape = RoundedCornerShape(12.dp),
+                            elevation = CardDefaults.cardElevation(4.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(12.dp)
+                            ) {
+                                // Аватар
+                                Surface(
+                                    modifier = Modifier.size(50.dp),
+                                    shape = CircleShape,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = .2f),
+                                ) {
+                                    Image(
+                                        painter = painterResource(id = follower.image),
+                                        contentDescription = null,
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .clip(CircleShape),
+                                        contentScale = ContentScale.Crop
+                                    )
+                                }
+
+                                // Имя и хендл
+                                Column(
+                                    modifier = Modifier
+                                        .padding(start = 12.dp)
+                                        .weight(1f)
+                                ){
+                                    Text(
+                                        text = follower.name,
+                                        fontWeight = FontWeight.Bold,
+                                        style = MaterialTheme.typography.bodyMedium
+                                    )
+                                    Text(
+                                        text = if (follower.isMe) "You" else follower.handle,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = if (follower.isMe) Color(0xFF2196F3) else Color.Gray,
+                                        fontWeight = if (follower.isMe) FontWeight.Bold else FontWeight.Normal
+                                    )
+                                }
+
+                                // Follow кнопка для каждого фоллоуера (кроме себя)
+                                if (!follower.isMe) {
+                                    Button(
+                                        onClick = {
+                                            isFollowingThisUser = !isFollowingThisUser
+                                        },
+                                        shape = RoundedCornerShape(20.dp),
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = if (isFollowingThisUser) Color.Gray else MaterialTheme.colorScheme.primary
+                                        ),
+                                        modifier = Modifier.height(35.dp)
+                                    ) {
+                                        Text(
+                                            text = if (isFollowingThisUser) "Following" else "Follow",
+                                            fontSize = MaterialTheme.typography.labelSmall.fontSize,
+                                            color = if (isFollowingThisUser) Color.Black else Color.White
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     }
-                }
+                )
             }
         }
     }
@@ -334,7 +501,6 @@ fun ProgressScreen() {
             modifier = Modifier.padding(bottom = 24.dp)
         )
 
-        // Course Understanding
         Text("Course Understanding: ${(courseUnderstanding * 100).toInt()}%")
         Slider(
             value = courseUnderstanding,
@@ -352,7 +518,6 @@ fun ProgressScreen() {
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Self Study
         Text("Self Study: ${(selfStudy * 100).toInt()}%")
         Slider(
             value = selfStudy,
@@ -370,7 +535,6 @@ fun ProgressScreen() {
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // YouTube
         Text("YouTube Tutorials: ${(youtube * 100).toInt()}%")
         Slider(
             value = youtube,
