@@ -33,6 +33,11 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.ui.layout.ContentScale
+import androidx.lifecycle.ViewModel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 
 
 data class Follower(
@@ -56,6 +61,53 @@ data class ProfileUiState(
         Follower(5, "Мынаубаев Мынау", "@mynau", 0),
     )
 )
+
+class ProfileViewModel : ViewModel() {
+    private val UIState = MutableStateFlow(ProfileUiState())
+    val uiState: StateFlow<ProfileUiState> = UIState.asStateFlow()
+    
+    fun updateName(name : String) {
+        UIState.update { it.copy(name = name) }
+    }
+
+    fun updateBio(bio : String) {
+        UIState.update { it.copy(bio = bio) }
+    }
+
+    fun follow() {
+        UIState.update {
+            it.copy(
+                isFollowed = true,
+                followers = it.followers + 1,
+                followersList = listOf(
+                    Follower(999, "You", "@yourhandle", 0, isMe = true)
+                ) + it.followersList
+            )
+        }
+    }
+
+    fun unFollow() {
+        UIState.update {
+            it.copy(
+                isFollowed = false,
+                followers = maxOf(0, it.followers - 1),
+                followersList = it.followersList.filter {f -> !f.isMe}
+            )
+        }
+    }
+
+    fun removeFollower(follower: Follower) {
+        UIState.update {
+            it.copy(followersList = it.followersList.filter { f -> f.id != follower.id })
+        }
+    }
+
+    fun addFollower(follower: Follower) {
+        UIState.update {
+            it.copy(followersList = (it.followersList + follower).sortedBy { f -> f.id })
+        }
+    }
+}
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
