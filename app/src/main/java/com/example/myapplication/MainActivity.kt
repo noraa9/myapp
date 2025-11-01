@@ -109,6 +109,12 @@ class ProfileViewModel : ViewModel() {
     }
 }
 
+object Routes {
+    const val HOME = "home"
+    const val PROFILE = "profile"
+    const val EDIT_PROFILE = "edit_profile"
+}
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
