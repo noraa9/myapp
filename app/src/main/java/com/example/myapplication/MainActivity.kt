@@ -33,7 +33,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.ui.layout.ContentScale
-import kotlin.math.round
 
 
 data class Follower(
@@ -42,6 +41,20 @@ data class Follower(
     val handle: String,
     val image: Int,
     val isMe: Boolean = false
+)
+
+data class ProfileUiState(
+    val name: String = "Aron Nurgaliyev",
+    val bio: String = "IT student",
+    val followers: Int = 5,
+    val isFollowed: Boolean = false,
+    val followersList: List<Follower> = listOf(
+        Follower(1, "Біреубева Біреу", "@bireubayev1", 0),
+        Follower(2, "Кеткенбаев Кеткен", "@ketken", 0),
+        Follower(3, "Барғанбаев Барған", "@barganbayev1987", 0),
+        Follower(4, "Анаубаев Анау", "@anaubaev2", 0),
+        Follower(5, "Мынаубаев Мынау", "@mynau", 0),
+    )
 )
 
 class MainActivity : ComponentActivity() {
@@ -62,6 +75,7 @@ fun MainApp() {
     val snackbarHostState = remember { SnackbarHostState() }
 
     var isFollowed by rememberSaveable { mutableStateOf(false) }
+
     var followers by rememberSaveable { mutableIntStateOf(5) }
     var showUnfollowDialog by rememberSaveable { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
