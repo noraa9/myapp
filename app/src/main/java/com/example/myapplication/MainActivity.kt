@@ -11,11 +11,15 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -23,21 +27,23 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import com.example.myapplication.ui.theme.MyApplicationTheme
-import kotlinx.coroutines.launch
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
-import androidx.compose.ui.layout.ContentScale
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.navigation.NavHostController
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
+import com.example.myapplication.ui.theme.MyApplicationTheme
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 
 
 data class Follower(
@@ -62,20 +68,21 @@ data class ProfileUiState(
     )
 )
 
+
 class ProfileViewModel : ViewModel() {
-    private val UIState = MutableStateFlow(ProfileUiState())
-    val uiState: StateFlow<ProfileUiState> = UIState.asStateFlow()
-    
-    fun updateName(name : String) {
-        UIState.update { it.copy(name = name) }
+    private val _uiState = MutableStateFlow(ProfileUiState())
+    val uiState: StateFlow<ProfileUiState> = _uiState.asStateFlow()
+
+    fun updateName(name: String) {
+        _uiState.update { it.copy(name = name) }
     }
 
-    fun updateBio(bio : String) {
-        UIState.update { it.copy(bio = bio) }
+    fun updateBio(bio: String) {
+        _uiState.update { it.copy(bio = bio) }
     }
 
     fun follow() {
-        UIState.update {
+        _uiState.update {
             it.copy(
                 isFollowed = true,
                 followers = it.followers + 1,
@@ -86,28 +93,29 @@ class ProfileViewModel : ViewModel() {
         }
     }
 
-    fun unFollow() {
-        UIState.update {
+    fun unfollow() {
+        _uiState.update {
             it.copy(
                 isFollowed = false,
                 followers = maxOf(0, it.followers - 1),
-                followersList = it.followersList.filter {f -> !f.isMe}
+                followersList = it.followersList.filter { f -> !f.isMe }
             )
         }
     }
 
     fun removeFollower(follower: Follower) {
-        UIState.update {
+        _uiState.update {
             it.copy(followersList = it.followersList.filter { f -> f.id != follower.id })
         }
     }
 
-    fun addFollower(follower: Follower) {
-        UIState.update {
+    fun addFollowerBack(follower: Follower) {
+        _uiState.update {
             it.copy(followersList = (it.followersList + follower).sortedBy { f -> f.id })
         }
     }
 }
+
 
 object Routes {
     const val HOME = "home"
@@ -120,21 +128,75 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         setContent {
             MyApplicationTheme {
-                MainApp()
+                AppNavigation()
             }
         }
     }
 }
 
+
+@Composable
+fun AppNavigation(viewModel: ProfileViewModel = viewModel()) {
+    val navController = rememberNavController()
+
+    NavHost(navController = navController, startDestination = Routes.HOME) {
+        composable(Routes.HOME) {
+            HomeScreen(navController)
+        }
+        composable(Routes.PROFILE) {
+            MainApp(navController, viewModel)
+        }
+        composable(Routes.EDIT_PROFILE) {
+            EditProfileScreen(navController, viewModel)
+        }
+    }
+}
+
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MainApp() {
-    var currentScreen by rememberSaveable { mutableStateOf("profile") }
+fun HomeScreen(navController: NavHostController) {
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Home") },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    titleContentColor = Color.White
+                )
+            )
+        }
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Text(
+                text = "Welcome to Profile App",
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(modifier = Modifier.height(24.dp))
+            Button(onClick = { navController.navigate(Routes.PROFILE) }) {
+                Text("Go to Profile")
+            }
+        }
+    }
+}
+
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun MainApp(
+    navController: NavHostController,
+    viewModel: ProfileViewModel
+) {
+    val uiState by viewModel.uiState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
-
-    var isFollowed by rememberSaveable { mutableStateOf(false) }
-
-    var followers by rememberSaveable { mutableIntStateOf(5) }
     var showUnfollowDialog by rememberSaveable { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
@@ -143,8 +205,7 @@ fun MainApp() {
             onDismissRequest = { showUnfollowDialog = false },
             confirmButton = {
                 TextButton(onClick = {
-                    isFollowed = false
-                    if (followers > 0) followers -= 1
+                    viewModel.unfollow()
                     showUnfollowDialog = false
                 }) {
                     Text("Unfollow")
@@ -163,59 +224,69 @@ fun MainApp() {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(if (currentScreen == "profile") "Profile Screen" else "Course Progress") },
+                title = { Text("Profile Screen") },
                 navigationIcon = {
-                    if (currentScreen == "progress") {
-                        IconButton(onClick = { currentScreen = "profile" }) {
-                            Icon(Icons.Default.ArrowBack, contentDescription = "Back")
-                        }
+                    IconButton(onClick = { navController.popBackStack() }) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                actions = {
+                    IconButton(onClick = { navController.navigate(Routes.EDIT_PROFILE) }) {
+                        Icon(Icons.Default.Edit, contentDescription = "Edit")
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primary,
                     titleContentColor = Color.White,
-                    navigationIconContentColor = Color.White
+                    navigationIconContentColor = Color.White,
+                    actionIconContentColor = Color.White
                 )
             )
         },
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { innerPadding ->
-        Box(modifier = Modifier.padding(innerPadding)) {
-            if (currentScreen == "profile") {
-                ProfileCard(
-                    isFollowed = isFollowed,
-                    followers = followers,
-                    onFollowClick = {
-                        if (isFollowed) {
-                            showUnfollowDialog = true
-                        } else {
-                            isFollowed = true
-                            followers += 1
-                            scope.launch {
-                                snackbarHostState.showSnackbar("You are now following!")
-                            }
-                        }
-                    },
-                    onNavigateToProgress = { currentScreen = "progress" },
-                    snackbarHostState = snackbarHostState
-                )
-            } else {
-                ProgressScreen()
-            }
-        }
+        ProfileCard(
+            modifier = Modifier.padding(innerPadding),
+            uiState = uiState,
+            onFollowClick = {
+                if (uiState.isFollowed) {
+                    showUnfollowDialog = true
+                } else {
+                    viewModel.follow()
+                    scope.launch {
+                        snackbarHostState.showSnackbar("You are now following!")
+                    }
+                }
+            },
+            onRemoveFollower = { follower ->
+                val removed = follower
+                viewModel.removeFollower(follower)
+                scope.launch {
+                    val result = snackbarHostState.showSnackbar(
+                        message = "${follower.name} removed",
+                        actionLabel = "Undo",
+                        duration = SnackbarDuration.Short
+                    )
+                    if (result == SnackbarResult.ActionPerformed) {
+                        viewModel.addFollowerBack(removed)
+                    }
+                }
+            },
+            snackbarHostState = snackbarHostState
+        )
     }
 }
+
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProfileCard(
-    isFollowed: Boolean,
-    followers: Int,
+    modifier: Modifier = Modifier,
+    uiState: ProfileUiState,
     onFollowClick: () -> Unit,
-    onNavigateToProgress: () -> Unit = {},
-    snackbarHostState: SnackbarHostState = remember { SnackbarHostState() }
+    onRemoveFollower: (Follower) -> Unit,
+    snackbarHostState: SnackbarHostState
 ) {
-
     var rainbowActive by rememberSaveable { mutableStateOf(false) }
 
     val rainbowColors = listOf(
@@ -225,16 +296,6 @@ fun ProfileCard(
         Color(208,243,205),
         Color(201,229,255),
     )
-
-    var follewerList by rememberSaveable {
-        mutableStateOf(listOf(
-            Follower(1, "Біреубева Біреу", "@bireubayev1" ,R.drawable.profile),
-            Follower(2, "Кеткенбаев Кеткен", "@ketken" ,R.drawable.profile2),
-            Follower(3, "Барғанбаев Барған", "@barganbayev1987" ,R.drawable.profile),
-            Follower(4, "Анаубаев Анау", "@anaubaev2" ,R.drawable.profile2),
-            Follower(5, "Мынаубаев Мынау", "@mynau" ,R.drawable.profile),
-        ))
-    }
 
     val scope = rememberCoroutineScope()
 
@@ -255,18 +316,18 @@ fun ProfileCard(
     )
 
     val buttonColor by animateColorAsState(
-        targetValue = if (isFollowed) Color.Gray else MaterialTheme.colorScheme.primary,
+        targetValue = if (uiState.isFollowed) Color.Gray else MaterialTheme.colorScheme.primary,
         animationSpec = tween(durationMillis = 200),
         label = "btnColor"
     )
 
     val textColor by animateColorAsState(
-        targetValue = if (isFollowed) Color.Black else Color.White,
+        targetValue = if (uiState.isFollowed) Color.Black else Color.White,
         animationSpec = tween(durationMillis = 200)
     )
 
     val animatedFollowers by animateIntAsState(
-        targetValue = followers,
+        targetValue = uiState.followers,
         animationSpec = tween(200)
     )
 
@@ -281,34 +342,19 @@ fun ProfileCard(
         }
     }
 
-    LaunchedEffect(isFollowed) {
-        if (isFollowed) {
-            if (follewerList.none { it.isMe }) {
-                follewerList = listOf(
-                    Follower(999, "You", "@yourhandle", R.drawable.profile, isMe = true)
-                ) + follewerList
-            }
-        } else {
-            // ДОБАВИЛ: удаляем себя из списка когда отписываемся
-            follewerList = follewerList.filter { !it.isMe }
-        }
-    }
-
     Column(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxSize()
             .background(Color.White)
     ) {
         Card(
             modifier = Modifier
                 .padding(8.dp)
-                .fillMaxWidth()
-                .clickable { onNavigateToProgress() },
+                .fillMaxWidth(),
             elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
             shape = RoundedCornerShape(12.dp),
             colors = CardDefaults.cardColors(containerColor = Color.DarkGray)
         ) {
-
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
@@ -321,7 +367,7 @@ fun ProfileCard(
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f),
                 ) {
                     Image(
-                        painter = painterResource(id = if (isFollowed) R.drawable.profile2 else R.drawable.profile),
+                        painter = painterResource(id = if (uiState.isFollowed) R.drawable.profile2 else R.drawable.profile),
                         contentDescription = null,
                         modifier = Modifier.clip(CircleShape)
                     )
@@ -332,13 +378,13 @@ fun ProfileCard(
                         .weight(1f)
                 ) {
                     Text(
-                        text = "Aron Nurgaliyev",
+                        text = uiState.name,
                         fontWeight = FontWeight.Bold,
                         color = Color.White,
                         style = MaterialTheme.typography.bodyLarge
                     )
                     Text(
-                        text = "IT student",
+                        text = uiState.bio,
                         color = Color.White.copy(alpha = 0.7f),
                         style = MaterialTheme.typography.bodyMedium
                     )
@@ -350,7 +396,10 @@ fun ProfileCard(
                 }
 
                 Button(
-                    onClick = onFollowClick,
+                    onClick = {
+                        onFollowClick()
+                        rainbowActive = !uiState.isFollowed
+                    },
                     shape = RoundedCornerShape(20.dp),
                     border = border,
                     colors = ButtonDefaults.buttonColors(
@@ -358,14 +407,13 @@ fun ProfileCard(
                     )
                 ) {
                     Text(
-                        text = if (isFollowed) "Followed" else "Follow",
+                        text = if (uiState.isFollowed) "Followed" else "Follow",
                         color = textColor
                     )
                 }
             }
         }
 
-        // STORIES SECTION
         Text(
             text = "Stories",
             style = MaterialTheme.typography.titleMedium,
@@ -411,43 +459,26 @@ fun ProfileCard(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // FOLLOWERS SECTION
         Text(
-            text = "Followers (${follewerList.size})",
+            text = "Followers (${uiState.followersList.size})",
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold,
             modifier = Modifier.padding(16.dp, 16.dp, 0.dp, 8.dp)
         )
 
-        val displayList = if (isFollowed) follewerList else follewerList.filter { !it.isMe }
-
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 8.dp)
-                .clip(RoundedCornerShape(12.dp)),
+                .padding(horizontal = 8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            items(displayList, key = { it.id }) { follower ->
+            items(uiState.followersList, key = { it.id }) { follower ->
                 var isFollowingThisUser by rememberSaveable(follower.id) { mutableStateOf(false) }
                 val currentItem by rememberUpdatedState(follower)
                 val dismissState = rememberSwipeToDismissBoxState(
                     confirmValueChange = { value ->
                         if (value == SwipeToDismissBoxValue.EndToStart && !follower.isMe) {
-                            val removedName = follower.name
-                            val removedFollower = currentItem
-                            follewerList = follewerList.filter { it.id != follower.id }
-
-                            scope.launch {
-                                val result = snackbarHostState.showSnackbar(
-                                    message = "$removedName removed from feed",
-                                    actionLabel = "Undo",
-                                    duration = SnackbarDuration.Short
-                                )
-                                if (result == SnackbarResult.ActionPerformed) {
-                                    follewerList = (follewerList + removedFollower).sortedBy { it.id }
-                                }
-                            }
+                            onRemoveFollower(currentItem)
                             return@rememberSwipeToDismissBoxState true
                         }
                         return@rememberSwipeToDismissBoxState false
@@ -466,8 +497,7 @@ fun ProfileCard(
                                 .background(Color.Gray.copy(alpha = 0.7f))
                                 .padding(horizontal = 16.dp)
                                 .clip(RoundedCornerShape(12.dp)),
-                            contentAlignment = Alignment.CenterEnd,
-
+                            contentAlignment = Alignment.CenterEnd
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Delete,
@@ -491,14 +521,13 @@ fun ProfileCard(
                                     .fillMaxWidth()
                                     .padding(12.dp)
                             ) {
-                                // Аватар
                                 Surface(
                                     modifier = Modifier.size(50.dp),
                                     shape = CircleShape,
                                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = .2f),
                                 ) {
                                     Image(
-                                        painter = painterResource(id = follower.image),
+                                        painter = painterResource(id = R.drawable.profile),
                                         contentDescription = null,
                                         modifier = Modifier
                                             .fillMaxSize()
@@ -507,7 +536,6 @@ fun ProfileCard(
                                     )
                                 }
 
-                                // Имя и хендл
                                 Column(
                                     modifier = Modifier
                                         .padding(start = 12.dp)
@@ -526,7 +554,6 @@ fun ProfileCard(
                                     )
                                 }
 
-                                // Follow кнопка для каждого фоллоуера (кроме себя)
                                 if (!follower.isMe) {
                                     Button(
                                         onClick = {
@@ -552,84 +579,82 @@ fun ProfileCard(
             }
         }
     }
-
 }
 
+
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ProgressScreen() {
-    var courseUnderstanding by rememberSaveable { mutableStateOf(0.7f) }
-    var selfStudy by rememberSaveable { mutableStateOf(0.5f) }
-    var youtube by rememberSaveable { mutableStateOf(0.3f) }
+fun EditProfileScreen(
+    navController: NavHostController,
+    viewModel: ProfileViewModel
+) {
+    val uiState by viewModel.uiState.collectAsState()
+    var name by remember { mutableStateOf(uiState.name) }
+    var bio by remember { mutableStateOf(uiState.bio) }
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp)
-    ) {
-        Text(
-            text = "Course Learning Progress",
-            style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.Bold,
-            modifier = Modifier.padding(bottom = 24.dp)
-        )
-
-        Text("Course Understanding: ${(courseUnderstanding * 100).toInt()}%")
-        Slider(
-            value = courseUnderstanding,
-            onValueChange = { courseUnderstanding = it },
-            valueRange = 0f..1f
-        )
-        LinearProgressIndicator(
-            progress = courseUnderstanding,
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Edit Profile") },
+                navigationIcon = {
+                    IconButton(onClick = { navController.popBackStack() }) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    titleContentColor = Color.White,
+                    navigationIconContentColor = Color.White
+                )
+            )
+        },
+        snackbarHost = { SnackbarHost(snackbarHostState) }
+    ) { padding ->
+        Column(
             modifier = Modifier
-                .fillMaxWidth()
-                .height(8.dp)
-                .padding(vertical = 8.dp),
-            color = Color(0xFF4CAF50)
-        )
+                .fillMaxSize()
+                .padding(padding)
+                .padding(16.dp)
+        ) {
+            Text(
+                text = "Edit your profile information",
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(bottom = 16.dp)
+            )
 
-        Spacer(modifier = Modifier.height(16.dp))
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it },
+                label = { Text("Name") },
+                modifier = Modifier.fillMaxWidth()
+            )
 
-        Text("Self Study: ${(selfStudy * 100).toInt()}%")
-        Slider(
-            value = selfStudy,
-            onValueChange = { selfStudy = it },
-            valueRange = 0f..1f
-        )
-        LinearProgressIndicator(
-            progress = selfStudy,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(8.dp)
-                .padding(vertical = 8.dp),
-            color = Color(0xFF2196F3)
-        )
+            Spacer(modifier = Modifier.height(16.dp))
 
-        Spacer(modifier = Modifier.height(16.dp))
+            OutlinedTextField(
+                value = bio,
+                onValueChange = { bio = it },
+                label = { Text("Bio") },
+                modifier = Modifier.fillMaxWidth()
+            )
 
-        Text("YouTube Tutorials: ${(youtube * 100).toInt()}%")
-        Slider(
-            value = youtube,
-            onValueChange = { youtube = it },
-            valueRange = 0f..1f
-        )
-        LinearProgressIndicator(
-            progress = youtube,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(8.dp)
-                .padding(vertical = 8.dp),
-            color = Color(0xFFFF5722)
-        )
+            Spacer(modifier = Modifier.height(24.dp))
 
-        Spacer(modifier = Modifier.height(24.dp))
-
-        CircularProgressIndicator(
-            progress = (courseUnderstanding + selfStudy + youtube) / 3,
-            modifier = Modifier
-                .size(100.dp)
-                .align(Alignment.CenterHorizontally)
-        )
+            Button(
+                onClick = {
+                    viewModel.updateName(name)
+                    viewModel.updateBio(bio)
+                    scope.launch {
+                        snackbarHostState.showSnackbar("Profile updated!")
+                    }
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Save Changes")
+            }
+        }
     }
 }
 
@@ -637,6 +662,6 @@ fun ProgressScreen() {
 @Composable
 fun DefaultPreview() {
     MyApplicationTheme {
-        MainApp()
+        AppNavigation()
     }
 }
