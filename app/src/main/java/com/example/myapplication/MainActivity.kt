@@ -1,5 +1,6 @@
 package com.example.myapplication
 
+import android.content.Context
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -9,7 +10,6 @@ import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -20,6 +20,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -33,48 +34,45 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.room.*
 import com.example.myapplication.ui.theme.MyApplicationTheme
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.update
+import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
+import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import retrofit2.http.GET
 
-
-
-@Entity(tableName = "user_profiles") //DataBase table
+// ============================================
+// ROOM DATABASE
+// ============================================
+@Entity(tableName = "user_profiles")
 data class UserProfileEntity(
-    @PrimaryKey val id: Int,
+    @PrimaryKey val id: Int = 1,
     val name: String,
-    val userName: String,
-    val email: String,
-    val followers: Int = 0,
-    val bio: String = ""
+    val bio: String,
+    val followers: Int,
+    val isFollowed: Boolean,
+    val followersListJson: String // JSON string of followers
 )
 
-
-@Dao //Database Operations
+@Dao
 interface UserDao {
-    @Query("SELECT * FROM user_profiles WHERE id = :userId")
-    fun getProfile(userId: Int): Flow<UserProfileEntity>
+    @Query("SELECT * FROM user_profiles WHERE id = 1")
+    fun getProfile(): Flow<UserProfileEntity?>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertProfile(profile: UserProfileEntity)
-
-    @Query("DELETE FROM user_profiles WHERE id = :userId")
-    suspend fun deleteProfile(userId: Int)
 }
 
-//Database
-@Database(entities = [UserProfileEntity::class], version = 1, exportSchema = false)
+@Database(entities = [UserProfileEntity::class], version = 2, exportSchema = false)
 abstract class AppDatabase : RoomDatabase() {
     abstract fun userDao(): UserDao
 
@@ -88,7 +86,9 @@ abstract class AppDatabase : RoomDatabase() {
                     context.applicationContext,
                     AppDatabase::class.java,
                     "profile_database"
-                ).build()
+                )
+                    .fallbackToDestructiveMigration()
+                    .build()
                 INSTANCE = instance
                 instance
             }
@@ -96,21 +96,77 @@ abstract class AppDatabase : RoomDatabase() {
     }
 }
 
-// API Response Model
+// ============================================
+// RETROFIT API
+// ============================================
 data class ApiUser(
     val id: Int,
     val name: String,
-    val username: String,
     val email: String
 )
 
-// Retrofit APOI Interface
 interface JsonPlaceholderApi {
-    @GET("user/1")
+    @GET("users/1")
     suspend fun getUser(): ApiUser
 }
 
+object RetrofitClient {
+    private const val BASE_URL = "https://jsonplaceholder.typicode.com/"
 
+    val api: JsonPlaceholderApi by lazy {
+        Retrofit.Builder()
+            .baseUrl(BASE_URL)
+            .addConverterFactory(GsonConverterFactory.create())
+            .build()
+            .create(JsonPlaceholderApi::class.java)
+    }
+}
+
+// ============================================
+// REPOSITORY
+// ============================================
+class UserRepository(
+    private val userDao: UserDao,
+    private val api: JsonPlaceholderApi
+) {
+    private val gson = Gson()
+
+    fun getProfile(): Flow<UserProfileEntity?> = userDao.getProfile()
+
+    suspend fun refreshFromApi(): Result<Unit> {
+        return try {
+            val apiUser = api.getUser()
+            val defaultFollowers = listOf(
+                Follower(1, "Біреубаева Біреу", "@bireubayev1", 0),
+                Follower(2, "Кеткенбаев Кеткен", "@ketken", 0),
+                Follower(3, "Барғанбаев Барған", "@barganbayev1987", 0),
+                Follower(4, "Анаубаев Анау", "@anaubaev2", 0),
+                Follower(5, "Мынаубаев Мынау", "@mynau", 0),
+            )
+
+            val entity = UserProfileEntity(
+                id = 1,
+                name = apiUser.name,
+                bio = "Loaded from API: ${apiUser.email}",
+                followers = defaultFollowers.size,
+                isFollowed = false,
+                followersListJson = gson.toJson(defaultFollowers)
+            )
+            userDao.insertProfile(entity)
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun updateProfile(profile: UserProfileEntity) {
+        userDao.insertProfile(profile)
+    }
+}
+
+// ============================================
+// DATA MODELS
+// ============================================
 data class Follower(
     val id: Int,
     val name: String,
@@ -125,25 +181,78 @@ data class ProfileUiState(
     val followers: Int = 5,
     val isFollowed: Boolean = false,
     val followersList: List<Follower> = listOf(
-        Follower(1, "Біреубева Біреу", "@bireubayev1", 0),
+        Follower(1, "Біреубаева Біреу", "@bireubayev1", 0),
         Follower(2, "Кеткенбаев Кеткен", "@ketken", 0),
         Follower(3, "Барғанбаев Барған", "@barganbayev1987", 0),
         Follower(4, "Анаубаев Анау", "@anaubaev2", 0),
         Follower(5, "Мынаубаев Мынау", "@mynau", 0),
-    )
+    ),
+    val isRefreshing: Boolean = false,
+    val errorMessage: String? = null,
+    val dataSource: String = "Local" // "Local" or "API"
 )
 
+// ============================================
+// VIEWMODEL
+// ============================================
+class ProfileViewModel(private val repository: UserRepository) : ViewModel() {
+    private val gson = Gson()
 
-class ProfileViewModel : ViewModel() {
     private val _uiState = MutableStateFlow(ProfileUiState())
     val uiState: StateFlow<ProfileUiState> = _uiState.asStateFlow()
 
+    init {
+        // Load from Room on startup
+        viewModelScope.launch {
+            repository.getProfile().collect { entity ->
+                entity?.let {
+                    val followersList = try {
+                        val type = object : TypeToken<List<Follower>>() {}.type
+                        gson.fromJson<List<Follower>>(it.followersListJson, type)
+                    } catch (e: Exception) {
+                        _uiState.value.followersList
+                    }
+
+                    _uiState.update { current ->
+                        current.copy(
+                            name = it.name,
+                            bio = it.bio,
+                            followers = it.followers,
+                            isFollowed = it.isFollowed,
+                            followersList = followersList,
+                            dataSource = "Room DB"
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    fun refreshFromApi() {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isRefreshing = true, errorMessage = null) }
+
+            repository.refreshFromApi().fold(
+                onSuccess = {
+                    _uiState.update { it.copy(dataSource = "API") }
+                },
+                onFailure = { error ->
+                    _uiState.update { it.copy(errorMessage = "Failed: ${error.message}") }
+                }
+            )
+
+            _uiState.update { it.copy(isRefreshing = false) }
+        }
+    }
+
     fun updateName(name: String) {
         _uiState.update { it.copy(name = name) }
+        saveToRoom()
     }
 
     fun updateBio(bio: String) {
         _uiState.update { it.copy(bio = bio) }
+        saveToRoom()
     }
 
     fun follow() {
@@ -156,6 +265,7 @@ class ProfileViewModel : ViewModel() {
                 ) + it.followersList
             )
         }
+        saveToRoom()
     }
 
     fun unfollow() {
@@ -166,22 +276,53 @@ class ProfileViewModel : ViewModel() {
                 followersList = it.followersList.filter { f -> !f.isMe }
             )
         }
+        saveToRoom()
     }
 
     fun removeFollower(follower: Follower) {
         _uiState.update {
             it.copy(followersList = it.followersList.filter { f -> f.id != follower.id })
         }
+        saveToRoom()
     }
 
     fun addFollowerBack(follower: Follower) {
         _uiState.update {
             it.copy(followersList = (it.followersList + follower).sortedBy { f -> f.id })
         }
+        saveToRoom()
+    }
+
+    private fun saveToRoom() {
+        viewModelScope.launch {
+            val current = _uiState.value
+            val entity = UserProfileEntity(
+                id = 1,
+                name = current.name,
+                bio = current.bio,
+                followers = current.followers,
+                isFollowed = current.isFollowed,
+                followersListJson = gson.toJson(current.followersList)
+            )
+            repository.updateProfile(entity)
+        }
     }
 }
 
+class ProfileViewModelFactory(private val repository: UserRepository) :
+    androidx.lifecycle.ViewModelProvider.Factory {
+    override fun <T : ViewModel> create(modelClass: Class<T>): T {
+        if (modelClass.isAssignableFrom(ProfileViewModel::class.java)) {
+            @Suppress("UNCHECKED_CAST")
+            return ProfileViewModel(repository) as T
+        }
+        throw IllegalArgumentException("Unknown ViewModel class")
+    }
+}
 
+// ============================================
+// NAVIGATION
+// ============================================
 object Routes {
     const val HOME = "home"
     const val PROFILE = "profile"
@@ -193,20 +334,26 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         setContent {
             MyApplicationTheme {
-                AppNavigation()
+                val database = remember { AppDatabase.getDatabase(applicationContext) }
+                val repository = remember {
+                    UserRepository(database.userDao(), RetrofitClient.api)
+                }
+                val viewModelFactory = remember { ProfileViewModelFactory(repository) }
+
+                AppNavigation(viewModelFactory)
             }
         }
     }
 }
 
-
 @Composable
-fun AppNavigation(viewModel: ProfileViewModel = viewModel()) {
+fun AppNavigation(viewModelFactory: ProfileViewModelFactory) {
     val navController = rememberNavController()
+    val viewModel: ProfileViewModel = viewModel(factory = viewModelFactory)
 
     NavHost(navController = navController, startDestination = Routes.HOME) {
         composable(Routes.HOME) {
-            HomeScreen(navController)
+            HomeScreen(navController, viewModel)
         }
         composable(Routes.PROFILE) {
             MainApp(navController, viewModel)
@@ -217,17 +364,27 @@ fun AppNavigation(viewModel: ProfileViewModel = viewModel()) {
     }
 }
 
-
+// ============================================
+// UI SCREENS
+// ============================================
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun HomeScreen(navController: NavHostController) {
+fun HomeScreen(navController: NavHostController, viewModel: ProfileViewModel) {
+    val uiState by viewModel.uiState.collectAsState()
+
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("Home") },
+                actions = {
+                    IconButton(onClick = { viewModel.refreshFromApi() }) {
+                        Icon(Icons.Default.Refresh, contentDescription = "Refresh from API")
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primary,
-                    titleContentColor = Color.White
+                    titleContentColor = Color.White,
+                    actionIconContentColor = Color.White
                 )
             )
         }
@@ -240,19 +397,78 @@ fun HomeScreen(navController: NavHostController) {
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
+            if (uiState.isRefreshing) {
+                CircularProgressIndicator()
+                Spacer(modifier = Modifier.height(16.dp))
+            }
+
+            uiState.errorMessage?.let {
+                Text(
+                    text = it,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(bottom = 16.dp)
+                )
+            }
+
             Text(
                 text = "Welcome to Profile App",
                 style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Bold
             )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Text(
+                text = "Data source: ${uiState.dataSource}",
+                style = MaterialTheme.typography.bodySmall,
+                color = Color.Gray
+            )
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.secondaryContainer
+                )
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text("Current Profile:", fontWeight = FontWeight.Bold)
+                    Text("Name: ${uiState.name}")
+                    Text("Bio: ${uiState.bio}")
+                    Text("Followers: ${uiState.followers}")
+                }
+            }
+
             Spacer(modifier = Modifier.height(24.dp))
-            Button(onClick = { navController.navigate(Routes.PROFILE) }) {
+
+            Button(
+                onClick = { navController.navigate(Routes.PROFILE) },
+                modifier = Modifier.fillMaxWidth()
+            ) {
                 Text("Go to Profile")
             }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            OutlinedButton(
+                onClick = { viewModel.refreshFromApi() },
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !uiState.isRefreshing
+            ) {
+                Text("Refresh from API")
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Text(
+                text = "✅ Data persists after app restart",
+                style = MaterialTheme.typography.bodySmall,
+                color = Color.Gray
+            )
         }
     }
 }
-
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -341,7 +557,6 @@ fun MainApp(
         )
     }
 }
-
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -646,7 +861,6 @@ fun ProfileCard(
     }
 }
 
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun EditProfileScreen(
@@ -658,6 +872,11 @@ fun EditProfileScreen(
     var bio by remember { mutableStateOf(uiState.bio) }
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+
+    LaunchedEffect(uiState.name, uiState.bio) {
+        name = uiState.name
+        bio = uiState.bio
+    }
 
     Scaffold(
         topBar = {
@@ -684,7 +903,7 @@ fun EditProfileScreen(
                 .padding(16.dp)
         ) {
             Text(
-                text = "Edit your profile information",
+                text = "Edit your profile (saved to Room DB)",
                 style = MaterialTheme.typography.titleMedium,
                 modifier = Modifier.padding(bottom = 16.dp)
             )
@@ -712,13 +931,21 @@ fun EditProfileScreen(
                     viewModel.updateName(name)
                     viewModel.updateBio(bio)
                     scope.launch {
-                        snackbarHostState.showSnackbar("Profile updated!")
+                        snackbarHostState.showSnackbar("Profile saved to Room DB!")
                     }
                 },
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text("Save Changes")
+                Text("Save to Room DB")
             }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Text(
+                text = "✅ Changes persist after app restart",
+                style = MaterialTheme.typography.bodySmall,
+                color = Color.Gray
+            )
         }
     }
 }
@@ -727,6 +954,30 @@ fun EditProfileScreen(
 @Composable
 fun DefaultPreview() {
     MyApplicationTheme {
-        AppNavigation()
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Text(
+                text = "Profile App with Room & Retrofit",
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                elevation = CardDefaults.cardElevation(8.dp)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text("Sample Profile", fontWeight = FontWeight.Bold)
+                    Text("Bio: IT Student", style = MaterialTheme.typography.bodySmall)
+                    Text("42 followers", style = MaterialTheme.typography.bodySmall)
+                    Text("Data persists in Room", style = MaterialTheme.typography.bodySmall)
+                }
+            }
+        }
     }
 }
