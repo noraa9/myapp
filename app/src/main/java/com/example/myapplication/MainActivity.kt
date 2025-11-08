@@ -44,6 +44,71 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import retrofit2.Retrofit
+import retrofit2.converter.gson.GsonConverterFactory
+import retrofit2.http.GET
+
+
+
+@Entity(tableName = "user_profiles") //DataBase table
+data class UserProfileEntity(
+    @PrimaryKey val id: Int,
+    val name: String,
+    val userName: String,
+    val email: String,
+    val followers: Int = 0,
+    val bio: String = ""
+)
+
+
+@Dao //Database Operations
+interface UserDao {
+    @Query("SELECT * FROM user_profiles WHERE id = :userId")
+    fun getProfile(userId: Int): Flow<UserProfileEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertProfile(profile: UserProfileEntity)
+
+    @Query("DELETE FROM user_profiles WHERE id = :userId")
+    suspend fun deleteProfile(userId: Int)
+}
+
+//Database
+@Database(entities = [UserProfileEntity::class], version = 1, exportSchema = false)
+abstract class AppDatabase : RoomDatabase() {
+    abstract fun userDao(): UserDao
+
+    companion object {
+        @Volatile
+        private var INSTANCE: AppDatabase? = null
+
+        fun getDatabase(context: Context): AppDatabase {
+            return INSTANCE ?: synchronized(this) {
+                val instance = Room.databaseBuilder(
+                    context.applicationContext,
+                    AppDatabase::class.java,
+                    "profile_database"
+                ).build()
+                INSTANCE = instance
+                instance
+            }
+        }
+    }
+}
+
+// API Response Model
+data class ApiUser(
+    val id: Int,
+    val name: String,
+    val username: String,
+    val email: String
+)
+
+// Retrofit APOI Interface
+interface JsonPlaceholderApi {
+    @GET("user/1")
+    suspend fun getUser(): ApiUser
+}
 
 
 data class Follower(
