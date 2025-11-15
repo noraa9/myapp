@@ -4,12 +4,14 @@ import android.content.Context
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import dagger.hilt.android.AndroidEntryPoint
 import androidx.compose.animation.animateColor
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -21,6 +23,9 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
+import androidx.compose.material.icons.filled.Comment
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -36,6 +41,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
+import dagger.hilt.android.lifecycle.HiltViewModel
+import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -49,6 +56,7 @@ import kotlinx.coroutines.launch
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import retrofit2.http.GET
+import javax.inject.Inject
 
 // ============================================
 // ROOM DATABASE
@@ -125,7 +133,7 @@ object RetrofitClient {
 // ============================================
 // REPOSITORY
 // ============================================
-class UserRepository(
+class UserRepository @Inject constructor(
     private val userDao: UserDao,
     private val api: JsonPlaceholderApi
 ) {
@@ -175,6 +183,16 @@ data class Follower(
     val isMe: Boolean = false
 )
 
+data class Post(
+    val id: Int,
+    val authorName: String,
+    val authorHandle: String,
+    val content: String,
+    val likes: Int,
+    val comments: Int,
+    val isLiked: Boolean = false
+)
+
 data class ProfileUiState(
     val name: String = "Aron Nurgaliyev",
     val bio: String = "IT student",
@@ -189,13 +207,23 @@ data class ProfileUiState(
     ),
     val isRefreshing: Boolean = false,
     val errorMessage: String? = null,
-    val dataSource: String = "Local" // "Local" or "API"
+    val dataSource: String = "Local", // "Local" or "API"
+    val posts: List<Post> = listOf(
+        Post(1, "Aron Nurgaliyev", "@aron", "Just finished my Android project! 🎉", 42, 5),
+        Post(2, "Біреубаева Біреу", "@bireubayev1", "Beautiful day today! ☀️", 28, 3),
+        Post(3, "Кеткенбаев Кеткен", "@ketken", "Learning Kotlin is fun! 💻", 15, 2),
+        Post(4, "Барғанбаев Барған", "@barganbayev1987", "New photo from vacation 📸", 67, 8),
+        Post(5, "Анаубаев Анау", "@anaubaev2", "Working on a new app idea 🚀", 33, 4)
+    )
 )
 
 // ============================================
 // VIEWMODEL
 // ============================================
-class ProfileViewModel(private val repository: UserRepository) : ViewModel() {
+@HiltViewModel
+class ProfileViewModel @Inject constructor(
+    private val repository: UserRepository
+) : ViewModel() {
     private val gson = Gson()
 
     private val _uiState = MutableStateFlow(ProfileUiState())
@@ -293,6 +321,37 @@ class ProfileViewModel(private val repository: UserRepository) : ViewModel() {
         saveToRoom()
     }
 
+    fun toggleLike(postId: Int) {
+        _uiState.update { current ->
+            current.copy(
+                posts = current.posts.map { post ->
+                    if (post.id == postId) {
+                        post.copy(
+                            isLiked = !post.isLiked,
+                            likes = if (post.isLiked) post.likes - 1 else post.likes + 1
+                        )
+                    } else {
+                        post
+                    }
+                }
+            )
+        }
+    }
+
+    fun addComment(postId: Int) {
+        _uiState.update { current ->
+            current.copy(
+                posts = current.posts.map { post ->
+                    if (post.id == postId) {
+                        post.copy(comments = post.comments + 1)
+                    } else {
+                        post
+                    }
+                }
+            )
+        }
+    }
+
     private fun saveToRoom() {
         viewModelScope.launch {
             val current = _uiState.value
@@ -327,29 +386,25 @@ object Routes {
     const val HOME = "home"
     const val PROFILE = "profile"
     const val EDIT_PROFILE = "edit_profile"
+    const val FEEDS = "feeds"
 }
 
+@AndroidEntryPoint
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContent {
             MyApplicationTheme {
-                val database = remember { AppDatabase.getDatabase(applicationContext) }
-                val repository = remember {
-                    UserRepository(database.userDao(), RetrofitClient.api)
-                }
-                val viewModelFactory = remember { ProfileViewModelFactory(repository) }
-
-                AppNavigation(viewModelFactory)
+                AppNavigation()
             }
         }
     }
 }
 
 @Composable
-fun AppNavigation(viewModelFactory: ProfileViewModelFactory) {
+fun AppNavigation() {
     val navController = rememberNavController()
-    val viewModel: ProfileViewModel = viewModel(factory = viewModelFactory)
+    val viewModel: ProfileViewModel = hiltViewModel()
 
     NavHost(navController = navController, startDestination = Routes.HOME) {
         composable(Routes.HOME) {
@@ -360,6 +415,9 @@ fun AppNavigation(viewModelFactory: ProfileViewModelFactory) {
         }
         composable(Routes.EDIT_PROFILE) {
             EditProfileScreen(navController, viewModel)
+        }
+        composable(Routes.FEEDS) {
+            FeedsScreen(navController, viewModel)
         }
     }
 }
@@ -447,6 +505,15 @@ fun HomeScreen(navController: NavHostController, viewModel: ProfileViewModel) {
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text("Go to Profile")
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Button(
+                onClick = { navController.navigate(Routes.FEEDS) },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Go to Feeds")
             }
 
             Spacer(modifier = Modifier.height(8.dp))
@@ -946,6 +1013,203 @@ fun EditProfileScreen(
                 style = MaterialTheme.typography.bodySmall,
                 color = Color.Gray
             )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun FeedsScreen(
+    navController: NavHostController,
+    viewModel: ProfileViewModel
+) {
+    val uiState by viewModel.uiState.collectAsState()
+    var selectedTabIndex by rememberSaveable { mutableStateOf(0) }
+    val tabs = listOf("Profile", "Feeds")
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("Feeds") },
+                navigationIcon = {
+                    IconButton(onClick = { navController.popBackStack() }) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    titleContentColor = Color.White,
+                    navigationIconContentColor = Color.White
+                )
+            )
+        },
+        snackbarHost = { SnackbarHost(remember { SnackbarHostState() }) }  // ✅ Теперь здесь
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+        ) {
+            TabRow(selectedTabIndex = selectedTabIndex) {
+                tabs.forEachIndexed { index, title ->
+                    Tab(
+                        selected = selectedTabIndex == index,
+                        onClick = { selectedTabIndex = index },
+                        text = { Text(title) }
+                    )
+                }
+            }
+
+            when (selectedTabIndex) {
+                0 -> {
+                    // Profile Tab
+                    val snackbarHostState = remember { SnackbarHostState() }
+                    val scope = rememberCoroutineScope()
+                    ProfileCard(
+                        modifier = Modifier.fillMaxSize(),
+                        uiState = uiState,
+                        onFollowClick = {
+                            if (uiState.isFollowed) {
+                                viewModel.unfollow()
+                            } else {
+                                viewModel.follow()
+                                scope.launch {
+                                    snackbarHostState.showSnackbar("You are now following!")
+                                }
+                            }
+                        },
+                        onRemoveFollower = { follower ->
+                            val removed = follower
+                            viewModel.removeFollower(follower)
+                            scope.launch {
+                                val result = snackbarHostState.showSnackbar(
+                                    message = "${follower.name} removed",
+                                    actionLabel = "Undo",
+                                    duration = SnackbarDuration.Short
+                                )
+                                if (result == SnackbarResult.ActionPerformed) {
+                                    viewModel.addFollowerBack(removed)
+                                }
+                            }
+                        },
+                        snackbarHostState = snackbarHostState
+                    )
+                }
+                1 -> {
+                    // Feeds Tab
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(uiState.posts, key = { it.id }) { post ->
+                            PostCard(
+                                post = post,
+                                onLikeClick = { viewModel.toggleLike(post.id) },
+                                onCommentClick = { viewModel.addComment(post.id) }
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun PostCard(
+    post: Post,
+    onLikeClick: () -> Unit,
+    onCommentClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        elevation = CardDefaults.cardElevation(4.dp),
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp)
+        ) {
+            // Author info
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(bottom = 12.dp)
+            ) {
+                Surface(
+                    modifier = Modifier.size(40.dp),
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f)
+                ) {
+                    Image(
+                        painter = painterResource(id = R.drawable.profile),
+                        contentDescription = null,
+                        modifier = Modifier.clip(CircleShape)
+                    )
+                }
+                Column(
+                    modifier = Modifier
+                        .padding(start = 12.dp)
+                        .weight(1f)
+                ) {
+                    Text(
+                        text = post.authorName,
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Text(
+                        text = post.authorHandle,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color.Gray
+                    )
+                }
+            }
+
+            // Post content
+            Text(
+                text = post.content,
+                style = MaterialTheme.typography.bodyLarge,
+                modifier = Modifier.padding(bottom = 12.dp)
+            )
+
+            // Like and Comment buttons
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(24.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.clickable { onLikeClick() }
+                ) {
+                    Icon(
+                        imageVector = if (post.isLiked) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                        contentDescription = "Like",
+                        tint = if (post.isLiked) Color.Red else Color.Gray,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = "${post.likes}",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.clickable { onCommentClick() }
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Comment,
+                        contentDescription = "Comment",
+                        tint = Color.Gray,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = "${post.comments}",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                }
+            }
         }
     }
 }
