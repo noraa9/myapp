@@ -8,6 +8,16 @@ import dagger.hilt.android.AndroidEntryPoint
 import androidx.compose.animation.animateColor
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.*
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -259,6 +269,9 @@ class ProfileViewModel @Inject constructor(
     fun refreshFromApi() {
         viewModelScope.launch {
             _uiState.update { it.copy(isRefreshing = true, errorMessage = null) }
+            
+            // Add delay to make shimmer visible (for demo purposes)
+            kotlinx.coroutines.delay(1500)
 
             repository.refreshFromApi().fold(
                 onSuccess = {
@@ -455,12 +468,11 @@ fun HomeScreen(navController: NavHostController, viewModel: ProfileViewModel) {
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
+            // 4. Shimmer placeholder during refresh
             if (uiState.isRefreshing) {
-                CircularProgressIndicator()
-                Spacer(modifier = Modifier.height(16.dp))
-            }
-
-            uiState.errorMessage?.let {
+                ShimmerPlaceholder()
+            } else {
+                uiState.errorMessage?.let {
                 Text(
                     text = it,
                     color = MaterialTheme.colorScheme.error,
@@ -533,6 +545,7 @@ fun HomeScreen(navController: NavHostController, viewModel: ProfileViewModel) {
                 style = MaterialTheme.typography.bodySmall,
                 color = Color.Gray
             )
+            }
         }
     }
 }
@@ -625,6 +638,66 @@ fun MainApp(
     }
 }
 
+// 4. Shimmer placeholder component
+@Composable
+fun ShimmerPlaceholder() {
+    val infiniteTransition = rememberInfiniteTransition(label = "shimmer")
+    val shimmerTranslate by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1000f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1000, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "shimmerTranslate"
+    )
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        // Shimmer card placeholder
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(120.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(
+                    brush = Brush.linearGradient(
+                        colors = listOf(
+                            Color(0xFFE0E0E0),
+                            Color(0xFFF5F5F5),
+                            Color(0xFFE0E0E0)
+                        ),
+                        start = Offset(shimmerTranslate - 300f, 0f),
+                        end = Offset(shimmerTranslate, 0f)
+                    )
+                )
+        )
+        Spacer(modifier = Modifier.height(16.dp))
+        // Shimmer text placeholder
+        Box(
+            modifier = Modifier
+                .fillMaxWidth(0.6f)
+                .height(20.dp)
+                .clip(RoundedCornerShape(4.dp))
+                .background(
+                    brush = Brush.linearGradient(
+                        colors = listOf(
+                            Color(0xFFE0E0E0),
+                            Color(0xFFF5F5F5),
+                            Color(0xFFE0E0E0)
+                        ),
+                        start = Offset(shimmerTranslate - 300f, 0f),
+                        end = Offset(shimmerTranslate, 0f)
+                    )
+                )
+        )
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ProfileCard(
@@ -662,6 +735,17 @@ fun ProfileCard(
         label = "rainbowAnimate"
     )
 
+
+    val pulseAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.3f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1000, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "pulse"
+    )
+
     val buttonColor by animateColorAsState(
         targetValue = if (uiState.isFollowed) Color.Gray else MaterialTheme.colorScheme.primary,
         animationSpec = tween(durationMillis = 200),
@@ -678,9 +762,37 @@ fun ProfileCard(
         animationSpec = tween(200)
     )
 
+    // 1. Animate avatar scale during sync
+    val avatarScale by animateFloatAsState(
+        targetValue = if (uiState.isRefreshing) 1.15f else 1f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessLow
+        ),
+        label = "avatarScale"
+    )
+
+    // Fade-in stats on load
+    var statsVisible by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.delay(300)
+        statsVisible = true
+    }
+
     val border = if (rainbowActive) {
         BorderStroke(3.dp, rainbowColor)
     } else null
+
+    // Custom spring bounce effect on button
+    var buttonPressed by remember { mutableStateOf(false) }
+    val buttonScale by animateFloatAsState(
+        targetValue = if (buttonPressed) 0.9f else 1f,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessMedium
+        ),
+        label = "buttonBounce"
+    )
 
     LaunchedEffect(rainbowActive) {
         if (rainbowActive) {
@@ -708,16 +820,29 @@ fun ProfileCard(
                     .fillMaxWidth()
                     .padding(16.dp)
             ) {
-                Surface(
-                    modifier = Modifier.size(60.dp),
-                    shape = CircleShape,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f),
-                ) {
-                    Image(
-                        painter = painterResource(id = if (uiState.isFollowed) R.drawable.profile2 else R.drawable.profile),
-                        contentDescription = null,
-                        modifier = Modifier.clip(CircleShape)
-                    )
+                Box {
+                    Surface(
+                        modifier = Modifier
+                            .size(60.dp)
+                            .scale(avatarScale),
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f),
+                    ) {
+                        Image(
+                            painter = painterResource(id = if (uiState.isFollowed) R.drawable.profile2 else R.drawable.profile),
+                            contentDescription = null,
+                            modifier = Modifier.clip(CircleShape)
+                        )
+                    }
+                    // 2. Pulse online status indicator
+                    Surface(
+                        modifier = Modifier
+                            .size(12.dp)
+                            .align(Alignment.BottomEnd)
+                            .alpha(pulseAlpha),
+                        shape = CircleShape,
+                        color = Color(0xFF4CAF50)
+                    ) {}
                 }
                 Column(
                     modifier = Modifier
@@ -735,23 +860,38 @@ fun ProfileCard(
                         color = Color.White.copy(alpha = 0.7f),
                         style = MaterialTheme.typography.bodyMedium
                     )
-                    Text(
-                        text = "$animatedFollowers followers",
-                        color = Color.White.copy(alpha = .7f),
-                        style = MaterialTheme.typography.bodySmall
-                    )
+                    // Fade-in stats on load
+                    AnimatedVisibility(
+                        visible = statsVisible,
+                        enter = fadeIn(animationSpec = tween(500)),
+                        exit = fadeOut()
+                    ) {
+                        Text(
+                            text = "$animatedFollowers followers",
+                            color = Color.White.copy(alpha = .7f),
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
                 }
 
+                // Custom spring bounce effect on button
                 Button(
                     onClick = {
+                        buttonPressed = true
                         onFollowClick()
                         rainbowActive = !uiState.isFollowed
+                        // Reset after animation
+                        scope.launch {
+                            kotlinx.coroutines.delay(200)
+                            buttonPressed = false
+                        }
                     },
                     shape = RoundedCornerShape(20.dp),
                     border = border,
                     colors = ButtonDefaults.buttonColors(
                         containerColor = buttonColor
-                    )
+                    ),
+                    modifier = Modifier.scale(buttonScale)
                 ) {
                     Text(
                         text = if (uiState.isFollowed) "Followed" else "Follow",
@@ -822,6 +962,19 @@ fun ProfileCard(
             items(uiState.followersList, key = { it.id }) { follower ->
                 var isFollowingThisUser by rememberSaveable(follower.id) { mutableStateOf(false) }
                 val currentItem by rememberUpdatedState(follower)
+                
+                // Slide timeline cards with spring bounce
+                AnimatedVisibility(
+                    visible = true,
+                    enter = slideInHorizontally(
+                        initialOffsetX = { it },
+                        animationSpec = spring(
+                            dampingRatio = Spring.DampingRatioMediumBouncy,
+                            stiffness = Spring.StiffnessLow
+                        )
+                    ) + fadeIn(),
+                    exit = slideOutHorizontally() + fadeOut()
+                ) {
                 val dismissState = rememberSwipeToDismissBoxState(
                     confirmValueChange = { value ->
                         if (value == SwipeToDismissBoxValue.EndToStart && !follower.isMe) {
@@ -923,6 +1076,7 @@ fun ProfileCard(
                         }
                     }
                 )
+                }
             }
         }
     }
